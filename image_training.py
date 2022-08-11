@@ -20,6 +20,8 @@ from tensorflow.keras.preprocessing.image import ImageDataGenerator, array_to_im
 import csv
 from shutil import copyfile
 from numpy import hstack
+from tensorflow.keras import optimizers, losses
+from tensorflow.keras.optimizers import RMSprop
 
 # print(os.getcwd())
 
@@ -234,31 +236,31 @@ def train_val_generators(training_images, training_labels, validation_images, va
   # Don't forget to normalize pixel values 
   # and set arguments to augment the images (if desired)
   train_datagen = ImageDataGenerator(
-      rescale = 1./65535,
-      rotation_range=0,            # was 40, then 20 (maybe switch back???)
-      width_shift_range=0.1,        # was 0.2
-      height_shift_range=0.2,       # was 0.2
-      shear_range=0,              # was 0.2
-      zoom_range=0,               # was 0.2
+      rescale = 1./65535.,           # was 65535
+      rotation_range=5,            # best was 20, was 5, previous set 40, then 20, then 10 and 0(maybe switch back???)
+      width_shift_range=0.05,        # best was 0, was 0.05, previous 0.1
+      height_shift_range=0.05,       # best was 0, was 0.05, previous 0.2
+      shear_range=0.05,              # best was 0, was 0.05, previous 0
+      zoom_range=0,               # best was 0
       horizontal_flip=True,         # was True
       fill_mode='nearest')
 
 
   # Pass in the appropriate arguments to the flow method
   train_generator = train_datagen.flow(x=training_images,
-                                       y=training_labels,
-                                       batch_size=40)       # was 40 w/ 0.8
+                                        y=training_labels,
+                                        batch_size=16)       # was 40 w/ 0.8
 
   
   # Instantiate the ImageDataGenerator class (don't forget to set the rescale argument)
   # Remember that validation data should not be augmented
   # rescale by 2^16 because the pgm images are 16 bit
-  validation_datagen = ImageDataGenerator(rescale = 1./65535.)
+  validation_datagen = ImageDataGenerator(rescale = 1./65535.)        # was 65535
 
   # Pass in the appropriate arguments to the flow method
   validation_generator = validation_datagen.flow(x=validation_images,
-                                                 y=validation_labels,
-                                                 batch_size=40)     # was 32
+                                                  y=validation_labels,
+                                                  batch_size=16)     # was 32
 
   return train_generator, validation_generator
 
@@ -285,8 +287,10 @@ def create_model():
         tf.keras.layers.Conv2D(64, (3,3), activation='relu'),  # was 64, (3,3)
         tf.keras.layers.MaxPooling2D(2,2),                      # was (2,2)
         # adding another conv for fun
+        # tf.keras.layers.Conv2D(128, (3,3), activation='relu'),  # was 64, (3,3)
+        # tf.keras.layers.MaxPooling2D(2,2),
         tf.keras.layers.Flatten(),
-        # tf.keras.layers.Dropout(0.5),
+        # tf.keras.layers.Dropout(0.2),
         # 512 neuron hidden layer
         tf.keras.layers.Dense(512, activation='relu'),     # 512 best, then 256
         tf.keras.layers.Dense(5, activation='softmax')
@@ -296,13 +300,14 @@ def create_model():
     
     # optimizer was 'adam'
     # learning_rate = 1e-5
-    optimizer = 'adam'
+    optimizer = RMSprop(learning_rate = 5e-5)       # was 5e-5 w/ 65535
     
     model.compile(optimizer = optimizer,
                   loss = 'sparse_categorical_crossentropy',
                   metrics=['accuracy'])      
   
     return model
+
 
 # ----------------------------------------------------------------------------
 
@@ -469,122 +474,158 @@ train_generator, validation_generator = train_val_generators(training_images, tr
 # print(f"Labels of validation generator have shape: {validation_generator.y.shape}")
 
 # --------------------------- Save your model --------------------------------
-model = create_model()
+# model = create_model()
 
 # -------------------------- Train your model --------------------------------
-history = model.fit(train_generator,
-                    epochs=200,             # overfit w/ 100, maybe try around 60
-                    validation_data=validation_generator)
+# history = model.fit(train_generator,
+#                     epochs=750,             # overfit w/ 100, maybe try around 60
+#                     validation_data=validation_generator)
 
 # --- Plot the chart for accuracy and loss on both training and validation ---
-acc = history.history['accuracy']
-val_acc = history.history['val_accuracy']
-loss = history.history['loss']
-val_loss = history.history['val_loss']
+for i in range(5):
+    # need to create a new model each time, since it'll keep training on
+    # the same one if not
+    model = create_model()
+    
+    if i == 0:
+        color = 'r'
+    if i == 1:
+        color = 'b'
+    if i == 2:
+        color = 'g'
+    if i == 3:
+        color = 'c'
+    if i == 4:
+        color = 'm'
+        
+    history = model.fit(train_generator,
+                        epochs=250,             # overfit w/ 100, maybe try around 60
+                        validation_data=validation_generator)
+    
+    acc = history.history['accuracy']
+    val_acc = history.history['val_accuracy']
+    loss = history.history['loss']
+    val_loss = history.history['val_loss']
+    
+    graph_label = "Trial " + str(i + 1)
 
-epochs = range(len(acc))
+    epochs = range(len(acc))
+    
+    plt.figure(num = 1)
+    plt.plot(epochs, acc, color, label=graph_label)
+    plt.title('Training Accuracy')
+    plt.legend()
+    
+    plt.figure(num = 2)
+    plt.plot(epochs, val_acc, color, label=graph_label)
+    plt.title('Validation Accuracy')
+    plt.legend()
+    
+    plt.figure(num = 3)
+    plt.plot(epochs, loss, color, label=graph_label)
+    plt.title('Training Loss')
+    plt.legend()
+    
+    plt.figure(num = 4)
+    plt.plot(epochs, val_loss, color, label=graph_label)
+    plt.title('Validation Loss')
+    plt.legend()
 
-plt.plot(epochs, acc, 'r', label='Training accuracy')
-plt.plot(epochs, val_acc, 'b', label='Validation accuracy')
-plt.title('Training and validation accuracy')
-plt.legend()
-plt.figure()
-
-plt.plot(epochs, loss, 'r', label='Training Loss')
-plt.plot(epochs, val_loss, 'b', label='Validation Loss')
-plt.title('Training and validation loss')
-plt.legend()
 
 plt.show()
 
-# -------------------------- CODE THAT IS UNUSED ------------------------------
-# # Just hardcoding it to make it work, still trying to get it to work other way
-# training = []
-# # training images
-# dir_zero = os.path.join(TRAINING_DIR, 'zero')
-# zero_val = [0]
-# zero_val = np.array(zero_val)
-# for img_name in os.listdir(dir_zero):
-#     file = os.path.join(dir_zero, img_name)
-#     zero_data = readpgm(file)
-#     total_arr = hstack((zero_val, zero_data[0]))
-#     training.append(total_arr)
-# dir_one = os.path.join(TRAINING_DIR, 'one')
-# one_val = [1]
-# one_val = np.array(one_val)
-# for img_name in os.listdir(dir_one):
-#     file = os.path.join(dir_one, img_name)
-#     one_data = readpgm(file)
-#     total_arr = hstack((one_val, one_data[0]))
-#     training.append(total_arr)
-# dir_two = os.path.join(TRAINING_DIR, 'two')
-# two_val = [2]
-# two_val = np.array(two_val)
-# for img_name in os.listdir(dir_two):
-#     file = os.path.join(dir_two, img_name)
-#     two_data = readpgm(file)
-#     total_arr = hstack((two_val, two_data[0]))
-#     training.append(total_arr)
-# dir_three = os.path.join(TRAINING_DIR, 'three')
-# three_val = [3]
-# three_val = np.array(three_val)
-# for img_name in os.listdir(dir_three):
-#     file = os.path.join(dir_three, img_name)
-#     three_data = readpgm(file)
-#     total_arr = hstack((three_val, three_data[0]))
-#     training.append(total_arr)
-# dir_four = os.path.join(TRAINING_DIR, 'four')
-# four_val = [4]
-# four_val = np.array(four_val)
-# for img_name in os.listdir(dir_four):
-#     file = os.path.join(dir_four, img_name)
-#     four_data = readpgm(file)
-#     total_arr = hstack((four_val, four_data[0]))
-#     training.append(total_arr)
-    
-# np.savetxt("training_data_hardcoded.csv", training, delimiter = ',')
+# # -------------------- showing process of convolutions ------------------------
+# import numpy as np
+# from tensorflow.keras.preprocessing.image import img_to_array, load_img
 
-# validation = []
-# # validation images
-# dir_zero = os.path.join(VALIDATION_DIR, 'zero')
-# zero_val = [0]
-# zero_val = np.array(zero_val)
-# for img_name in os.listdir(dir_zero):
-#     file = os.path.join(dir_zero, img_name)
-#     zero_data = readpgm(file)
-#     total_arr = hstack((zero_val, zero_data[0]))
-#     validation.append(total_arr)
-# dir_one = os.path.join(VALIDATION_DIR, 'one')
-# one_val = [1]
-# one_val = np.array(one_val)
-# for img_name in os.listdir(dir_one):
-#     file = os.path.join(dir_one, img_name)
-#     one_data = readpgm(file)
-#     total_arr = hstack((one_val, one_data[0]))
-#     validation.append(total_arr)
-# dir_two = os.path.join(VALIDATION_DIR, 'two')
-# two_val = [2]
-# two_val = np.array(two_val)
-# for img_name in os.listdir(dir_two):
-#     file = os.path.join(dir_two, img_name)
-#     two_data = readpgm(file)
-#     total_arr = hstack((two_val, two_data[0]))
-#     validation.append(total_arr)
-# dir_three = os.path.join(VALIDATION_DIR, 'three')
-# three_val = [3]
-# three_val = np.array(three_val)
-# for img_name in os.listdir(dir_three):
-#     file = os.path.join(dir_three, img_name)
-#     three_data = readpgm(file)
-#     total_arr = hstack((three_val, three_data[0]))
-#     validation.append(total_arr)
-# dir_four = os.path.join(VALIDATION_DIR, 'four')
-# four_val = [4]
-# four_val = np.array(four_val)
-# for img_name in os.listdir(dir_four):
-#     file = os.path.join(dir_four, img_name)
-#     four_data = readpgm(file)
-#     total_arr = hstack((four_val, four_data[0]))
-#     validation.append(total_arr)
+# # Define a new Model that will take an image as input, and will output
+# # intermediate representations for all layers in the previous model after
+# # the first.
+# successive_outputs = [layer.output for layer in model.layers[1:]]
+# visualization_model = tf.keras.models.Model(inputs = model.input, outputs = successive_outputs)
+
+# # Prepare a random input image from the training set.
+# rand_number = random.randint(0, 4)
+# print(rand_number)
+# if rand_number == 0:
+#     random_image = random.choice(os.listdir(ZERO_SOURCE_DIR))
+#     directory = ZERO_SOURCE_DIR
+# elif rand_number == 1:
+#     random_image = random.choice(os.listdir(ONE_SOURCE_DIR))
+#     directory = ONE_SOURCE_DIR
+# elif rand_number == 2:
+#     random_image = random.choice(os.listdir(TWO_SOURCE_DIR))
+#     directory = TWO_SOURCE_DIR
+# elif rand_number == 3:
+#     random_image = random.choice(os.listdir(THREE_SOURCE_DIR))
+#     directory = THREE_SOURCE_DIR
+# else:
+#     random_image = random.choice(os.listdir(FOUR_SOURCE_DIR))
+#     directory = FOUR_SOURCE_DIR
     
-# np.savetxt("validation_data_hardcoded.csv", validation, delimiter = ',')
+# print(random_image)
+# image_in_array = readpgm(os.path.join(directory, random_image))
+# print(image_in_array[0])
+# image_array = np.array(image_in_array[0], dtype = int)
+# x = np.reshape(image_array, (80, 60, 1))
+# print(x)
+# x = x.reshape((1,) + x.shape)
+# x = np.divide(x, 255)
+# print(x)
+
+# # horse_img_files = [os.path.join(train_horse_dir, f) for f in train_horse_names]
+# # human_img_files = [os.path.join(train_human_dir, f) for f in train_human_names]
+# # img_path = random.choice(horse_img_files + human_img_files)
+
+# # img = load_img(img_path, target_size=(300, 300))  # this is a PIL image
+# # x = img_to_array(img)  # Numpy array with shape (300, 300, 3)
+# # x = x.reshape((1,) + x.shape)  # Numpy array with shape (1, 300, 300, 3)
+
+# # # Scale by 1/255
+# # x /= 255
+
+# # Run the image through the network, thus obtaining all
+# # intermediate representations for this image.
+# successive_feature_maps = visualization_model.predict(x)
+
+# # These are the names of the layers, so you can have them as part of the plot
+# layer_names = [layer.name for layer in model.layers[1:]]
+
+# # Display the representations
+# for layer_name, feature_map in zip(layer_names, successive_feature_maps):
+#   if len(feature_map.shape) == 4:
+
+#     # Just do this for the conv / maxpool layers, not the fully-connected layers
+#     n_features = feature_map.shape[-1]  # number of features in feature map
+
+#     # The feature map has shape (1, size, size, n_features)
+#     size = feature_map.shape[1]
+#     size2 = feature_map.shape[2]
+    
+#     # Tile the images in this matrix
+#     print(feature_map.shape)
+#     print(n_features)
+#     print(size)
+#     print(size2)
+#     display_grid = np.zeros((size, size2 * n_features))
+#     print(display_grid.shape)
+#     for i in range(n_features):
+#       x = feature_map[0, :, :, i]
+#       x -= x.mean()
+#       x /= x.std()
+#       x *= 64
+#       x += 128
+#       x = np.clip(x, 0, 255).astype('uint8')
+#       # print(x)
+#       # x = np.reshape(x, (39, 39))
+    
+#       # Tile each filter into this big horizontal grid
+#       # print(display_grid)
+#       display_grid[:, i * size : (i + 1) * size2] = x
+    
+#     # Display the grid
+#     scale = 20. / n_features
+#     plt.figure(figsize=(scale * n_features, scale))
+#     plt.title(layer_name)
+#     plt.grid(False)
+#     plt.imshow(display_grid, aspect='auto', cmap='viridis')
